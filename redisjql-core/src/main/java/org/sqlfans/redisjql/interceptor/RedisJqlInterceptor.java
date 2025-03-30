@@ -23,6 +23,11 @@ import java.util.Set;
  * 
  * <p>支持表名和Mapper接口名白名单配置，只有在白名单中的表或Mapper才会被拦截处理。</p>
  * 
+ * <p>支持在SQL注释中添加NOREDISJQL标记禁用特定查询的缓存，例如：</p>
+ * <pre>
+ * /&#42; NOREDISJQL &#42;/ SELECT * FROM t_user WHERE name = #{name}
+ * </pre>
+ * 
  * <p><strong>XML配置示例：</strong></p>
  * <pre>
  * &lt;plugin interceptor="org.sqlfans.redisjql.interceptor.RedisJqlInterceptor"&gt;
@@ -168,6 +173,12 @@ public class RedisJqlInterceptor implements Interceptor {
             return invocation.proceed();
         }
         
+        // 检查SQL是否包含NOREDISJQL注释标记
+        if (sql != null && sql.trim().toLowerCase().contains("/* noredisjql */")) {
+            logger.debug("SQL contains NOREDISJQL directive, skipping redisjql-cache processing");
+            return invocation.proceed();
+        }
+        
         // Process based on SQL type
         SqlType sqlType = SqlType.fromSql(sql);
         switch (sqlType) {
@@ -220,6 +231,12 @@ public class RedisJqlInterceptor implements Interceptor {
     
     private Object handleSelect(Invocation invocation, String sql) throws Throwable {
         try {
+            // 检查SQL是否包含NOCACHE注释标记
+            if (sql != null && sql.trim().toLowerCase().contains("/* nocache */")) {
+                logger.debug("SQL contains NOCACHE directive, skipping cache processing");
+                return invocation.proceed();
+            }
+            
             // 解析SQL语句
             net.sf.jsqlparser.statement.Statement statement = statementParser.parse(sql);
             if (!(statement instanceof net.sf.jsqlparser.statement.select.Select)) {
