@@ -6,7 +6,10 @@ import org.sqlfans.redisjql.annotation.RedisIndex;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -99,5 +102,36 @@ public class IndexConfigLoader {
         }
         
         return config;
+    }
+
+    /**
+     * 从输入流加载 JSON 配置
+     * @param inputStream 包含 JSON 配置的输入流
+     * @return 加载的索引配置列表
+     */
+    public List<IndexConfig> load(InputStream inputStream) {
+        logger.info("开始从 JSON 文件加载索引配置");
+        List<IndexConfig> configs = new ArrayList<>();
+        
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            IndexConfig[] indexConfigs = objectMapper.readValue(inputStream, IndexConfig[].class);
+            
+            for (IndexConfig config : indexConfigs) {
+                configs.add(config);
+                indexConfigCache.put(config.getTableName(), config);
+                logger.info("已加载表的索引配置: {}", config.getTableName());
+            }
+        } catch (Exception e) {
+            logger.error("加载 JSON 配置文件失败", e);
+        } finally {
+            try {
+                inputStream.close();
+            } catch (IOException e) {
+                logger.error("关闭输入流失败", e);
+            }
+        }
+        
+        return configs;
     }
 } 

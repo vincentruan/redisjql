@@ -1,0 +1,62 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: redisjql-example
+  
+  # H2数据库配置
+  datasource:
+    url: jdbc:h2:mem:redisjqldb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+    schema: classpath:schema.sql
+    data: classpath:data.sql
+  
+  # H2 Console配置
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      settings:
+        web-allow-others: true
+  
+  # Redis配置
+  redis:
+    host: localhost
+    port: 6379
+    database: 0
+    timeout: 3000
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: -1ms
+
+# MyBatis配置
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: org.sqlfans.redisjql.example.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+    default-statement-timeout: 30
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# RedisJQL配置
+redisjql:
+  cache:
+    type: redis
+    redis-client: lettuce
+  enabled: true
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    org.sqlfans.redisjql: DEBUG
+    org.sqlfans.redisjql.example: DEBUG
+    org.springframework.data.redis: INFO
+    org.mybatis: INFO 

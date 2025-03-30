@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.sqlfans.redisjql.example.mapper.ProductMapper">
+    <!-- 结果映射 -->
+    <resultMap id="productResultMap" type="Product">
+        <id property="id" column="id"/>
+        <result property="productName" column="product_name"/>
+        <result property="category" column="category"/>
+        <result property="price" column="price"/>
+        <result property="stock" column="stock"/>
+        <result property="description" column="description"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="version" column="version"/>
+    </resultMap>
+    
+    <!-- 公共字段 -->
+    <sql id="Base_Column_List">
+        id, product_name, category, price, stock, description, create_time, update_time, version
+    </sql>
+    
+    <!-- 查询操作 -->
+    <select id="findById" resultMap="productResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_product
+        WHERE id = #{id}
+    </select>
+    
+    <select id="findByName" resultMap="productResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_product
+        WHERE product_name LIKE CONCAT('%', #{name}, '%')
+        ORDER BY product_name ASC
+    </select>
+    
+    <select id="findByCategory" resultMap="productResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_product
+        WHERE category = #{category}
+        ORDER BY product_name ASC
+    </select>
+    
+    <select id="findByPriceRange" resultMap="productResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_product
+        WHERE price BETWEEN #{minPrice} AND #{maxPrice}
+        ORDER BY price ASC
+    </select>
+    
+    <select id="findByStockRange" resultMap="productResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_product
+        WHERE stock BETWEEN #{minStock} AND #{maxStock}
+        ORDER BY stock ASC
+    </select>
+    
+    <select id="findAllOrderByStock" resultMap="productResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_product
+        ORDER BY stock
+        <if test="!ascending">
+            DESC
+        </if>
+    </select>
+    
+    <select id="findAllOrderByPrice" resultMap="productResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_product
+        ORDER BY price
+        <if test="!ascending">
+            DESC
+        </if>
+    </select>
+    
+    <!-- 插入操作 -->
+    <insert id="insert" parameterType="Product">
+        INSERT INTO t_product (
+            id, product_name, category, price, stock, description, create_time, update_time, version
+        ) VALUES (
+            #{id}, #{productName}, #{category}, #{price}, #{stock}, #{description}, 
+            #{createTime}, #{updateTime}, #{version}
+        )
+    </insert>
+    
+    <!-- 更新操作 -->
+    <update id="update" parameterType="Product">
+        UPDATE t_product 
+        SET product_name = #{productName},
+            category = #{category},
+            price = #{price},
+            stock = #{stock},
+            description = #{description},
+            update_time = #{updateTime},
+            version = version + 1
+        WHERE id = #{id} AND version = #{version}
+    </update>
+    
+    <update id="updateStock">
+        UPDATE t_product 
+        SET stock = #{stock},
+            update_time = CURRENT_TIMESTAMP,
+            version = version + 1
+        WHERE id = #{id} AND version = #{version}
+    </update>
+    
+    <!-- 删除操作 -->
+    <delete id="deleteById">
+        DELETE FROM t_product
+        WHERE id = #{id}
+    </delete>
+</mapper> 

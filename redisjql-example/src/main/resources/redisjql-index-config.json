@@ -1,0 +1,115 @@
+[
+  {
+    "tableName": "t_user",
+    "primaryKey": "id",
+    "versionField": "version",
+    "indexes": [
+      {
+        "name": "idx_user_name",
+        "fields": [
+          "name"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_user_age",
+        "fields": [
+          "age"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_user_gender",
+        "fields": [
+          "gender"
+        ],
+        "unique": false
+      },
+      {
+        "name": "uk_username",
+        "fields": [
+          "username"
+        ],
+        "unique": true
+      }
+    ]
+  },
+  {
+    "tableName": "t_product",
+    "primaryKey": "id",
+    "versionField": "version",
+    "indexes": [
+      {
+        "name": "idx_product_name",
+        "fields": [
+          "product_name"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_product_category",
+        "fields": [
+          "category"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_product_stock",
+        "fields": [
+          "stock"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_product_price",
+        "fields": [
+          "price"
+        ],
+        "unique": false
+      }
+    ]
+  },
+  {
+    "tableName": "t_order",
+    "primaryKey": "id",
+    "versionField": "version",
+    "indexes": [
+      {
+        "name": "idx_order_user_id",
+        "fields": [
+          "user_id"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_order_product_id",
+        "fields": [
+          "product_id"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_order_time",
+        "fields": [
+          "order_time"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_order_status",
+        "fields": [
+          "status"
+        ],
+        "unique": false
+      },
+      {
+        "name": "idx_user_product",
+        "fields": [
+          "user_id",
+          "product_id"
+        ],
+        "unique": false
+      }
+    ]
+  }
+]
