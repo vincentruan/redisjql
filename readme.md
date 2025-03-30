@@ -374,8 +374,8 @@ public class CustomCacheService implements CacheOperationService {
 在SQL注释中添加特定标记，可以禁用特定查询的缓存：
 
 ```java
-@Select("/* NOCACHE */ SELECT * FROM t_user WHERE id = #{id}")
-User getUserById(Long id);
+@Select("/* NOREDISJQL */ SELECT * FROM t_user WHERE name = #{name}")
+User getUserByName(String name);
 ```
 
 ## 最佳实践
