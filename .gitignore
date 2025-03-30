@@ -88,6 +88,4 @@ local.properties
 .idea/
 .vscode/
 
-redisjql-core/target/
-redisjql-springboot/target/
-
+target/

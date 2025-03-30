@@ -167,7 +167,7 @@ public class RedisJqlAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean(CacheOperationService.class)
-    @ConditionalOnProperty(prefix = "redisjql", name = {"cache.type", "cache.redis-client"}, havingValue = "lettuce", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "redisjql", name = {"cache.type", "cache.redis-client"}, havingValue = "lettuce", matchIfMissing = false)
     public CacheOperationService lettuceCacheOperationService(ReactiveRedisTemplate<String, String> redisTemplate) {
         return new LettuceCacheOperationService(redisTemplate);
     }
