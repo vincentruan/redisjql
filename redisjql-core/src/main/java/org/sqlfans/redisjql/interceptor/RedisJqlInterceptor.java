@@ -12,12 +12,47 @@ import org.sqlfans.redisjql.cache.CacheOperationService;
 import org.sqlfans.redisjql.config.IndexConfig;
 import org.sqlfans.redisjql.parser.StatementParser;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
 
 /**
  * MyBatis 拦截器
  * 用于拦截 SQL 语句并进行处理
+ * 
+ * <p>支持表名和Mapper接口名白名单配置，只有在白名单中的表或Mapper才会被拦截处理。</p>
+ * 
+ * <p><strong>XML配置示例：</strong></p>
+ * <pre>
+ * &lt;plugin interceptor="org.sqlfans.redisjql.interceptor.RedisJqlInterceptor"&gt;
+ *   &lt;property name="tableWhitelist" value="user,order,product"/&gt;
+ *   &lt;property name="mapperWhitelist" value="com.example.mapper.UserMapper,com.example.mapper.OrderMapper"/&gt;
+ * &lt;/plugin&gt;
+ * </pre>
+ * 
+ * <p><strong>Java配置示例：</strong></p>
+ * <pre>
+ * {@code
+ * @Bean
+ * public RedisJqlInterceptor redisJqlInterceptor(StatementParser statementParser, 
+ *                                              CacheOperationService cacheOperationService) {
+ *     Set<String> tableWhitelist = new HashSet<>();
+ *     tableWhitelist.add("user");
+ *     tableWhitelist.add("order");
+ *     
+ *     Set<String> mapperWhitelist = new HashSet<>();
+ *     mapperWhitelist.add("com.example.mapper.UserMapper");
+ *     
+ *     return new RedisJqlInterceptor(statementParser, cacheOperationService)
+ *         .setTableWhitelist(tableWhitelist)
+ *         .setMapperWhitelist(mapperWhitelist);
+ * }
+ * }
+ * </pre>
+ * 
+ * @author vincentruan
+ * @version 1.0.0
  */
 @Intercepts({
     @Signature(type = Executor.class, method = "update", args = {MappedStatement.class, Object.class}),
@@ -27,33 +62,160 @@ public class RedisJqlInterceptor implements Interceptor {
     private static final Logger logger = LoggerFactory.getLogger(RedisJqlInterceptor.class);
     private StatementParser statementParser;
     private CacheOperationService redisOperationService;
+    private Set<String> tableWhitelist = Collections.emptySet();
+    private Set<String> mapperWhitelist = Collections.emptySet();
+    private boolean whitelistEnabled = false;
     
     public RedisJqlInterceptor(StatementParser statementParser, CacheOperationService redisOperationService) {
         this.statementParser = statementParser;
         this.redisOperationService = redisOperationService;
     }
     
+    /**
+     * 设置表名白名单，只有白名单中的表才会被拦截处理
+     * @param tables 表名集合
+     * @return 当前拦截器实例
+     */
+    public RedisJqlInterceptor setTableWhitelist(Set<String> tables) {
+        if (tables != null && !tables.isEmpty()) {
+            this.tableWhitelist = new HashSet<>(tables);
+            this.whitelistEnabled = true;
+        }
+        return this;
+    }
+    
+    /**
+     * 设置Mapper接口名白名单，只有白名单中的Mapper接口才会被拦截处理
+     * @param mappers Mapper接口全限定名集合
+     * @return 当前拦截器实例
+     */
+    public RedisJqlInterceptor setMapperWhitelist(Set<String> mappers) {
+        if (mappers != null && !mappers.isEmpty()) {
+            this.mapperWhitelist = new HashSet<>(mappers);
+            this.whitelistEnabled = true;
+        }
+        return this;
+    }
+    
+    /**
+     * SQL type enumeration
+     */
+    private enum SqlType {
+        SELECT("select"),
+        INSERT("insert"),
+        UPDATE("update"),
+        DELETE("delete"),
+        UNKNOWN("");
+        
+        private final String prefix;
+        
+        SqlType(String prefix) {
+            this.prefix = prefix;
+        }
+        
+        public static SqlType fromSql(String sql) {
+            if (sql == null || sql.trim().isEmpty()) {
+                return UNKNOWN;
+            }
+            
+            String lowerSql = sql.trim().toLowerCase();
+            for (SqlType type : values()) {
+                if (!type.equals(UNKNOWN) && lowerSql.startsWith(type.prefix)) {
+                    return type;
+                }
+            }
+            return UNKNOWN;
+        }
+    }
+    
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
+        // Parameter validation
+        if (invocation == null) {
+            logger.error("Interceptor received null Invocation object");
+            return null;
+        }
+        
         Object[] args = invocation.getArgs();
+        if (args == null || args.length < 2) {
+            logger.warn("Insufficient parameters for interceptor, proceeding without interception");
+            return invocation.proceed();
+        }
+        
+        if (!(args[0] instanceof MappedStatement)) {
+            logger.warn("First argument is not a MappedStatement, proceeding without interception");
+            return invocation.proceed();
+        }
+        
         MappedStatement ms = (MappedStatement) args[0];
         Object parameter = args[1];
         
-        BoundSql boundSql = ms.getBoundSql(parameter);
-        String sql = boundSql.getSql();
-        
-        // 根据 SQL 类型进行处理
-        if (sql.trim().toLowerCase().startsWith("select")) {
-            return handleSelect(invocation, sql);
-        } else if (sql.trim().toLowerCase().startsWith("insert")) {
-            return handleInsert(invocation, sql);
-        } else if (sql.trim().toLowerCase().startsWith("update")) {
-            return handleUpdate(invocation, sql);
-        } else if (sql.trim().toLowerCase().startsWith("delete")) {
-            return handleDelete(invocation, sql);
+        // Check if Mapper interface is in whitelist
+        if (whitelistEnabled && !isMapperAllowed(ms.getId())) {
+            logger.debug("Mapper interface {} not in whitelist, proceeding without interception", ms.getId());
+            return invocation.proceed();
         }
         
-        return invocation.proceed();
+        BoundSql boundSql = ms.getBoundSql(parameter);
+        if (boundSql == null) {
+            logger.warn("Unable to get BoundSql object, proceeding without interception");
+            return invocation.proceed();
+        }
+        
+        String sql = boundSql.getSql();
+        if (sql == null || sql.trim().isEmpty()) {
+            logger.warn("SQL statement is empty, proceeding without interception");
+            return invocation.proceed();
+        }
+        
+        // Process based on SQL type
+        SqlType sqlType = SqlType.fromSql(sql);
+        switch (sqlType) {
+            case SELECT:
+                return handleSelect(invocation, sql);
+            case INSERT:
+                return handleInsert(invocation, sql);
+            case UPDATE:
+                return handleUpdate(invocation, sql);
+            case DELETE:
+                return handleDelete(invocation, sql);
+            default:
+                logger.debug("Unrecognized SQL type: {}", sql.substring(0, Math.min(20, sql.length())));
+                return invocation.proceed();
+        }
+    }
+    
+    /**
+     * 检查Mapper接口是否在白名单中
+     * @param statementId Mapper方法ID (格式: com.example.mapper.UserMapper.findById)
+     * @return 是否允许处理
+     */
+    private boolean isMapperAllowed(String statementId) {
+        if (!whitelistEnabled || mapperWhitelist.isEmpty()) {
+            return true;
+        }
+        
+        // 提取Mapper接口名 (com.example.mapper.UserMapper)
+        int lastDot = statementId.lastIndexOf('.');
+        if (lastDot > 0) {
+            String mapperName = statementId.substring(0, lastDot);
+            return mapperWhitelist.contains(mapperName);
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 检查表名是否在白名单中
+     * @param tableName 表名
+     * @return 是否允许处理
+     */
+    private boolean isTableAllowed(String tableName) {
+        if (!whitelistEnabled || tableWhitelist.isEmpty()) {
+            return true;
+        }
+        
+        return tableWhitelist.contains(tableName);
     }
     
     private Object handleSelect(Invocation invocation, String sql) throws Throwable {
@@ -66,6 +228,24 @@ public class RedisJqlInterceptor implements Interceptor {
             
             net.sf.jsqlparser.statement.select.Select select = 
                 (net.sf.jsqlparser.statement.select.Select) statement;
+                
+            // 获取表名并检查是否在白名单中
+            if (select.getSelectBody() instanceof net.sf.jsqlparser.statement.select.PlainSelect) {
+                net.sf.jsqlparser.statement.select.PlainSelect plainSelect = 
+                    (net.sf.jsqlparser.statement.select.PlainSelect) select.getSelectBody();
+                
+                if (plainSelect.getFromItem() instanceof net.sf.jsqlparser.schema.Table) {
+                    net.sf.jsqlparser.schema.Table table = 
+                        (net.sf.jsqlparser.schema.Table) plainSelect.getFromItem();
+                    
+                    String tableName = table.getName();
+                    if (!isTableAllowed(tableName)) {
+                        // 表不在白名单中，直接执行原SQL
+                        logger.debug("Table {} not in whitelist, skipping SQL interception", tableName);
+                        return invocation.proceed();
+                    }
+                }
+            }
             
             // 判断是否为单值查询场景（主键或唯一索引）
             if (isSingleValueQuery(select)) {
@@ -387,6 +567,17 @@ public class RedisJqlInterceptor implements Interceptor {
                 return invocation.proceed();
             }
             
+            net.sf.jsqlparser.statement.insert.Insert insert = 
+                (net.sf.jsqlparser.statement.insert.Insert) statement;
+                
+            // 检查表名是否在白名单中
+            String tableName = insert.getTable().getName();
+            if (!isTableAllowed(tableName)) {
+                // 表不在白名单中，直接执行原SQL
+                logger.debug("Table {} not in whitelist, skipping SQL interception", tableName);
+                return invocation.proceed();
+            }
+            
             // 检查是否包含版本号字段
             if (!containsVersionField(statement)) {
                 // 输出debug日志
@@ -405,7 +596,6 @@ public class RedisJqlInterceptor implements Interceptor {
             // 根据索引配置更新Redis缓存
             Object indexInfo = statementParser.processStatement(statement);
             if (indexInfo != null) {
-                String tableName = ((net.sf.jsqlparser.statement.insert.Insert) statement).getTable().getName();
                 String indexKey = indexInfo.toString();
                 double score = extractScore(statement); // 从排序字段获取分数
                 
@@ -430,6 +620,17 @@ public class RedisJqlInterceptor implements Interceptor {
                 return invocation.proceed();
             }
             
+            net.sf.jsqlparser.statement.update.Update update = 
+                (net.sf.jsqlparser.statement.update.Update) statement;
+                
+            // 检查表名是否在白名单中
+            String tableName = update.getTable().getName();
+            if (!isTableAllowed(tableName)) {
+                // 表不在白名单中，直接执行原SQL
+                logger.debug("Table {} not in whitelist, skipping SQL interception", tableName);
+                return invocation.proceed();
+            }
+            
             // 检查是否包含版本号字段
             if (!containsVersionField(statement)) {
                 // 输出debug日志
@@ -448,9 +649,6 @@ public class RedisJqlInterceptor implements Interceptor {
             if (primaryKey == null) {
                 return result;
             }
-            
-            // 获取表名
-            String tableName = ((net.sf.jsqlparser.statement.update.Update) statement).getTable().getName();
             
             // 获取旧的索引键
             Set<String> oldIndexKeys = redisOperationService.getPrimaryKeyMappings(tableName, primaryKey);
@@ -488,14 +686,22 @@ public class RedisJqlInterceptor implements Interceptor {
                 return invocation.proceed();
             }
             
+            net.sf.jsqlparser.statement.delete.Delete delete = 
+                (net.sf.jsqlparser.statement.delete.Delete) statement;
+                
+            // 检查表名是否在白名单中
+            String tableName = delete.getTable().getName();
+            if (!isTableAllowed(tableName)) {
+                // 表不在白名单中，直接执行原SQL
+                logger.debug("Table {} not in whitelist, skipping SQL interception", tableName);
+                return invocation.proceed();
+            }
+            
             // 获取删除记录的主键值
             String primaryKey = extractPrimaryKeyFromDelete(statement);
             if (primaryKey == null) {
                 return invocation.proceed();
             }
-            
-            // 获取表名
-            String tableName = ((net.sf.jsqlparser.statement.delete.Delete) statement).getTable().getName();
             
             // 执行原SQL
             Object result = invocation.proceed();
@@ -945,6 +1151,26 @@ public class RedisJqlInterceptor implements Interceptor {
     
     @Override
     public void setProperties(Properties properties) {
-        // do nothing
+        if (properties != null) {
+            // 读取表名白名单配置
+            String tableWhitelistStr = properties.getProperty("tableWhitelist");
+            if (tableWhitelistStr != null && !tableWhitelistStr.trim().isEmpty()) {
+                Set<String> tables = new HashSet<>();
+                for (String table : tableWhitelistStr.split(",")) {
+                    tables.add(table.trim());
+                }
+                setTableWhitelist(tables);
+            }
+            
+            // 读取Mapper接口白名单配置
+            String mapperWhitelistStr = properties.getProperty("mapperWhitelist");
+            if (mapperWhitelistStr != null && !mapperWhitelistStr.trim().isEmpty()) {
+                Set<String> mappers = new HashSet<>();
+                for (String mapper : mapperWhitelistStr.split(",")) {
+                    mappers.add(mapper.trim());
+                }
+                setMapperWhitelist(mappers);
+            }
+        }
     }
 }
